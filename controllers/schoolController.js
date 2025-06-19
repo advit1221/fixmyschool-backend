@@ -1,35 +1,73 @@
 // controllers/schoolController.js
-const School = require('../models/School');
-const jwt = require('jsonwebtoken');
+const asyncHandler = require("express-async-handler");
+const School = require("../models/School");
+const Feedback = require("../models/Feedback");
+const jwt = require("jsonwebtoken");
 
-const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-exports.registerSchool = async (req, res) => {
+// Register school
+const registerSchool = asyncHandler(async (req, res) => {
   const { name, email, password } = req.body;
-  const existing = await School.findOne({ email });
-  if (existing) return res.status(400).json({ message: 'School already exists' });
+
+  const schoolExists = await School.findOne({ email });
+  if (schoolExists) {
+    res.status(400);
+    throw new Error("School already registered");
+  }
 
   const school = await School.create({ name, email, password });
-  const token = generateToken(school._id);
-  res.status(201).json({ token, school: { name: school.name, email: school.email } });
-};
-
-exports.loginSchool = async (req, res) => {
-  const { email, password } = req.body;
-  const school = await School.findOne({ email });
-  if (!school || !(await school.matchPassword(password))) {
-    return res.status(401).json({ message: 'Invalid credentials' });
+  if (school) {
+    res.status(201).json({
+      _id: school._id,
+      name: school.name,
+      email: school.email,
+      token: generateToken(school._id),
+    });
+  } else {
+    res.status(400);
+    throw new Error("Invalid school data");
   }
-  const token = generateToken(school._id);
-  res.json({ token, school: { name: school.name, email: school.email } });
+});
+
+// Login school
+const loginSchool = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
+
+  const school = await School.findOne({ email });
+  if (school && (await school.matchPassword(password))) {
+    res.json({
+      _id: school._id,
+      name: school.name,
+      email: school.email,
+      token: generateToken(school._id),
+    });
+  } else {
+    res.status(401);
+    throw new Error("Invalid credentials");
+  }
+});
+
+// Get feedbacks
+const getFeedbacks = asyncHandler(async (req, res) => {
+  const feedbacks = await Feedback.find({ school: req.school._id });
+  res.json(feedbacks);
+});
+
+// List all schools (public route)
+const listSchools = asyncHandler(async (req, res) => {
+  const schools = await School.find().select("name email");
+  res.json(schools);
+});
+
+// Token generator
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: "30d",
+  });
 };
 
-exports.getFeedbacks = async (req, res) => {
-  const school = await School.findById(req.user.id);
-  const feedbacks = await require('../models/Feedback').find({ schoolName: school.name });
-  res.json(feedbacks);
-};
-exports.listSchools = async (req, res) => {
-  const schools = await School.find({}, 'name');
-  res.json(schools);
+module.exports = {
+  registerSchool,
+  loginSchool,
+  getFeedbacks,
+  listSchools,
 };
